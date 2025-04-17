@@ -20,6 +20,7 @@ var timestampFormats = []string{
 	"2006-01-02 15:04:05",                 // basic format without fractional seconds
 	"2006-01-02T15:04:05Z",                // ISO format with Z
 	"2006-01-02T15:04:05.000Z",            // vector_logger, envoy-proxy
+	"2006-01-02T15:04:05.000000Z",         // vector_logger with microseconds
 	"2006.01.02 15:04:05.000",             // clickhouse
 	"Jan 2 15:04:05.000 2006",             // query_log, manticore_query
 	"02/Jan/2006 15:04:05.000",            // gunicorn, saveload
@@ -47,6 +48,8 @@ var timestampFormats = []string{
 	"20060102150405",                      // Compact timestamp without separators
 	"20060102150405-0700",                 // Compact timestamp with timezone
 	"2006-01-02 15:04:05.999999999 -0700", // Full timestamp with timezone and nanoseconds
+	"Jan 2 15:04:05",                      // rsyslogd format
+	"Jan _2 15:04:05",                     // rsyslogd format with padding
 }
 
 func parseTimestamp(timestampStr string) (time.Time, error) {
@@ -82,12 +85,30 @@ func main() {
 	for scanner.Scan() {
 		line := scanner.Text()
 		fields := strings.Fields(line)
-		if len(fields) < 2 {
+		if len(fields) < 1 {
 			continue
 		}
 
-		timestampStr := fields[0] + " " + fields[1]
-		timestamp, err := parseTimestamp(timestampStr)
+		// Попробуем разные варианты форматирования таймштампа
+		var timestamp time.Time
+		var err error
+
+		// Сначала пробуем только первое поле (для логов типа vector_logger)
+		timestampStr := fields[0]
+		timestamp, err = parseTimestamp(timestampStr)
+
+		// Если не удалось, пробуем первые два поля (традиционный формат)
+		if err != nil && len(fields) >= 2 {
+			timestampStr = fields[0] + " " + fields[1]
+			timestamp, err = parseTimestamp(timestampStr)
+		}
+
+		// Если не удалось, пробуем первые три поля
+		if err != nil && len(fields) >= 3 {
+			timestampStr = fields[0] + " " + fields[1] + " " + fields[2]
+			timestamp, err = parseTimestamp(timestampStr)
+		}
+
 		if err != nil {
 			// Если не удалось распарсить таймштамп, пропускаем строку
 			continue
