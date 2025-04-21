@@ -257,7 +257,8 @@ func (m Model) View() string {
 
 	// Create histogram visualization
 	histogramView := m.renderHistogram()
-	histogramBox := borderStyle.Render(histogramView)
+	// Ensure histogram box takes full width
+	histogramBox := borderStyle.Width(m.width - borderStyle.GetHorizontalFrameSize() + 2).Render(histogramView)
 
 	// Create command input with "list" label
 	inputStyle := lipgloss.NewStyle().
@@ -269,13 +270,15 @@ func (m Model) View() string {
 		Bold(true).
 		Render("cmd")
 
-	commandInput := inputStyle.Render(commandLabel + " " + m.textInput.View())
+	// Ensure command input box takes full width
+	commandInput := inputStyle.Width(m.width - inputStyle.GetHorizontalFrameSize() + 2).Render(commandLabel + " " + m.textInput.View())
 
 	// Create log output view
 	logOutputStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("#874BFD"))
-	logOutput := logOutputStyle.Render(m.viewport.View())
+	// Ensure log output box takes full width
+	logOutput := logOutputStyle.Width(m.width - logOutputStyle.GetHorizontalFrameSize()).Render(m.viewport.View())
 
 	// Combine all parts
 	return lipgloss.JoinVertical(lipgloss.Left,
