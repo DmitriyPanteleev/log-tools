@@ -148,7 +148,7 @@ type logFileLoadedMsg struct {
 func (m Model) Init() tea.Cmd {
 	if len(os.Args) < 2 {
 		return func() tea.Msg {
-			return errorMsg{fmt.Errorf("Использование: go run main.go <имя_лог_файла>")}
+			return errorMsg{fmt.Errorf("использование: go run main.go <имя_лог_файла>")}
 		}
 	}
 
@@ -191,16 +191,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-		// Adjust component sizes
+		// Define styles temporarily to get border sizes
+		// Note: It might be better to define these styles once in the model
+		logOutputStyle := lipgloss.NewStyle().
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#874BFD"))
+
+		inputStyle := lipgloss.NewStyle().
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color("#874BFD")).
+			Padding(0, 1)
+
+		// Adjust component sizes, accounting for border/padding widths
 		histogramHeight := 8 // Height for histogram area
-		inputHeight := 3     // Height for input area
+		inputHeight := 3     // Height for input area (including border)
 
-		// Viewport gets the rest of the space
+		// Calculate available width inside borders
+		viewportWidth := m.width - logOutputStyle.GetHorizontalFrameSize()
+		inputWidth := m.width - inputStyle.GetHorizontalFrameSize()
+
+		// Viewport gets the rest of the space vertically
 		m.viewport.Height = m.height - histogramHeight - inputHeight
-		m.viewport.Width = m.width
+		m.viewport.Width = viewportWidth
 
-		// Make sure textInput has correct width
-		m.textInput.Width = m.width - 6 // Leave space for the "list" label
+		// Make sure textInput has correct width, accounting for label and input border/padding
+		// Label "list " is 5 chars wide.
+		m.textInput.Width = inputWidth - 5
 
 	case logFileLoadedMsg:
 		m.histogram = msg.histogram
@@ -251,7 +267,7 @@ func (m Model) View() string {
 
 	commandLabel := lipgloss.NewStyle().
 		Bold(true).
-		Render("list")
+		Render("cmd")
 
 	commandInput := inputStyle.Render(commandLabel + " " + m.textInput.View())
 
