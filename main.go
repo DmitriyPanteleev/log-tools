@@ -203,8 +203,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Padding(0, 1)
 
 		// Adjust component sizes, accounting for border/padding widths
-		histogramHeight := 8 // Height for histogram area
-		inputHeight := 3     // Height for input area (including border)
+		histogramHeight := 10 // Height for histogram area
+		inputHeight := 3      // Height for input area (including border)
 
 		// Calculate available width inside borders
 		viewportWidth := m.width - logOutputStyle.GetHorizontalFrameSize()
@@ -257,8 +257,14 @@ func (m Model) View() string {
 
 	// Create histogram visualization
 	histogramView := m.renderHistogram()
-	// Ensure histogram box takes full width
-	histogramBox := borderStyle.Width(m.width - borderStyle.GetHorizontalFrameSize() + 2).Render(histogramView)
+	// Считаем количество строк в гистограмме
+	// histogramLines := strings.Count(histogramView, "\n") + 1
+	// Делаем рамку заведомо выше диаграммы (например, +2 строки)
+	histogramBox := borderStyle.
+		Width(m.width - borderStyle.GetHorizontalFrameSize() + 2).
+		// Height(histogramLines).
+		// Height(0).
+		Render(histogramView)
 
 	// Create command input with "list" label
 	inputStyle := lipgloss.NewStyle().
