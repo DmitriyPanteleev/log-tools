@@ -379,9 +379,9 @@ func (m Model) renderHistogram() string {
 	}
 
 	// Подписи: начало, середина, конец
-	startLabel := startTime.Format("15:04")
-	midLabel := startTime.Add(totalDuration / 2).Format("15:04")
-	endLabel := endTime.Format("15:04")
+	startLabel := startTime.Format("2006-01-02 15:04")
+	midLabel := startTime.Add(totalDuration / 2).Format("2006-01-02 15:04")
+	endLabel := endTime.Format("2006-01-02 15:04")
 
 	// Размещаем подписи равномерно
 	labelRow := make([]rune, histWidth)
