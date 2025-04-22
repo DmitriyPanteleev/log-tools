@@ -293,37 +293,82 @@ func (m Model) renderHistogram() string {
 		return "Загрузка гистограммы..."
 	}
 
-	// Sort times for consistent display
+	// Определяем ширину области для гистограммы (без рамок)
+	histWidth := m.width - 4 // 2 символа на каждую сторону рамки
+
+	// Получаем все времена из гистограммы и сортируем
 	var times []string
 	for t := range m.histogram {
 		times = append(times, t)
 	}
 	sort.Strings(times)
-
-	// Find max count for scaling
-	maxCount := 0
-	for _, count := range m.histogram {
-		if count > maxCount {
-			maxCount = count
-		}
+	if len(times) == 0 || histWidth < 2 {
+		return "Недостаточно данных для гистограммы"
 	}
 
-	// Calculate histogram dimensions
-	histHeight := 5 // Fixed height for the bars
+	// Преобразуем строки времени в time.Time
+	var timePoints []time.Time
+	for _, t := range times {
+		parsed, err := time.Parse("2006-01-02 15:04", t)
+		if err == nil {
+			timePoints = append(timePoints, parsed)
+		}
+	}
+	if len(timePoints) == 0 {
+		return "Ошибка разбора времени"
+	}
 
-	// Create a simplified ASCII histogram
+	// Находим минимальное и максимальное время
+	startTime := timePoints[0]
+	endTime := timePoints[len(timePoints)-1]
+	totalDuration := endTime.Sub(startTime)
+	if totalDuration == 0 {
+		totalDuration = time.Minute // чтобы не делить на 0
+	}
+
+	// Разбиваем диапазон на histWidth интервалов
+	binCounts := make([]int, histWidth)
+	binStarts := make([]time.Time, histWidth)
+	binDuration := totalDuration / time.Duration(histWidth)
+
+	for i := 0; i < histWidth; i++ {
+		binStarts[i] = startTime.Add(time.Duration(i) * binDuration)
+	}
+
+	// Для каждой точки времени определяем, в какой интервал она попадает
+	for tStr, count := range m.histogram {
+		t, err := time.Parse("2006-01-02 15:04", tStr)
+		if err != nil {
+			continue
+		}
+		binIdx := int(t.Sub(startTime) / binDuration)
+		if binIdx >= histWidth {
+			binIdx = histWidth - 1
+		}
+		binCounts[binIdx] += count
+	}
+
+	// Находим максимальное значение для масштабирования
+	maxCount := 0
+	for _, c := range binCounts {
+		if c > maxCount {
+			maxCount = c
+		}
+	}
+	if maxCount == 0 {
+		maxCount = 1
+	}
+
+	histHeight := 5
 	var sb strings.Builder
 
-	// Create bar representation for each time point
+	// Рисуем столбцы
 	for i := 0; i < histHeight; i++ {
-		for _, t := range times {
-			count := m.histogram[t]
+		for _, count := range binCounts {
 			barHeight := (count * histHeight) / maxCount
 			if count > 0 && barHeight == 0 {
-				barHeight = 1 // Ensure at least a height of 1 for non-zero counts
+				barHeight = 1
 			}
-
-			// Render bars from bottom to top
 			if histHeight-i-1 < barHeight {
 				sb.WriteString("█")
 			} else {
@@ -333,39 +378,26 @@ func (m Model) renderHistogram() string {
 		sb.WriteString("\n")
 	}
 
-	// Add time labels (start, middle, end)
-	if len(times) > 0 {
-		// Get start, middle, and end times for labels
-		startLabel := times[0]
-		endLabel := times[len(times)-1]
-		middleLabel := ""
+	// Подписи: начало, середина, конец
+	startLabel := startTime.Format("15:04")
+	midLabel := startTime.Add(totalDuration / 2).Format("15:04")
+	endLabel := endTime.Format("15:04")
 
-		if len(times) > 2 {
-			middleIdx := len(times) / 2
-			middleLabel = times[middleIdx]
-		}
-
-		// Create label row with proper spacing
-		timeLabels := startLabel
-
-		if middleLabel != "" {
-			// Calculate spaces needed for middle label
-			middlePos := len(times)/2 - len(startLabel)
-			if middlePos < 1 {
-				middlePos = 1
-			}
-			timeLabels += strings.Repeat(" ", middlePos) + middleLabel
-		}
-
-		// Calculate spaces needed for end label
-		endPos := len(times) - len(timeLabels) - len(endLabel)
-		if endPos < 1 {
-			endPos = 1
-		}
-		timeLabels += strings.Repeat(" ", endPos) + endLabel
-
-		sb.WriteString(timeLabels)
+	// Размещаем подписи равномерно
+	labelRow := make([]rune, histWidth)
+	for i := range labelRow {
+		labelRow[i] = ' '
 	}
+	copy(labelRow, []rune(startLabel))
+	midPos := histWidth/2 - len(midLabel)/2
+	if midPos+len(midLabel) < histWidth {
+		copy(labelRow[midPos:], []rune(midLabel))
+	}
+	endPos := histWidth - len(endLabel)
+	if endPos >= 0 {
+		copy(labelRow[endPos:], []rune(endLabel))
+	}
+	sb.WriteString(string(labelRow))
 
 	return sb.String()
 }
