@@ -178,6 +178,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "help":
 				m.viewport.SetContent("Доступные команды:\n" +
 					"list - Показать все записи логов\n" +
+					"filter    - Отобразить строки, соответствующие регулярному выражению\n" +
+					"statistic - Сформировать статистику по лог файлу\n" +
+					"analyse   - Расширенный анализ лог файла\n" +
 					"quit - Выйти из приложения\n" +
 					"help - Показать эту справку")
 			default:
@@ -225,7 +228,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.maxTime = msg.maxTime
 
 		// Set initial content for viewport
-		m.viewport.SetContent(fmt.Sprintf("Файл логов загружен: %s\n%d записей найдено.\nВведите 'list' для просмотра логов.",
+		m.viewport.SetContent(fmt.Sprintf(
+			"Файл логов загружен: %s\n%d записей найдено.\n"+
+				"Введите 'list' для просмотра логов.\n\n"+
+				"Доступные команды:\n"+
+				"list - Показать все записи логов\n"+
+				"filter    - Отобразить строки, соответствующие регулярному выражению\n"+
+				"statistic - Сформировать статистику по лог файлу\n"+
+				"analyse   - Расширенный анализ лог файла\n"+
+				"quit - Выйти из приложения\n"+
+				"help - Показать эту справку",
 			m.logFile, len(m.logLines)))
 
 	case errorMsg:
