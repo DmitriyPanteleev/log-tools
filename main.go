@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"regexp" // добавьте этот импорт
 	"sort"
 	"strings"
 	"time"
@@ -26,12 +27,16 @@ type Model struct {
 	minTime   time.Time       // Earliest timestamp in logs
 	maxTime   time.Time       // Latest timestamp in logs
 	err       error           // Stores any errors
+
+	filterMode bool   // <--- новое поле: режим фильтрации
+	filterExpr string // <--- новое поле: последнее выражение фильтра
 }
 
 func initialModel() Model {
 	ti := textinput.New()
 	ti.Placeholder = "Enter command"
 	ti.Focus()
+	ti.Prompt = "" // <--- добавьте эту строку
 
 	vp := viewport.New(80, 10)
 	vp.SetContent("Log output will appear here...")
@@ -168,11 +173,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC, tea.KeyEsc:
 			return m, tea.Quit
 		case tea.KeyEnter:
+			if m.filterMode {
+				// Применяем фильтр
+				re, err := regexp.Compile(m.textInput.Value())
+				if err != nil {
+					m.viewport.SetContent(fmt.Sprintf("Ошибка в регулярном выражении: %v", err))
+				} else {
+					m.filterExpr = m.textInput.Value()
+					var filtered []string
+					for _, line := range m.logLines {
+						if re.MatchString(line) {
+							filtered = append(filtered, line)
+						}
+					}
+					m.viewport.SetContent(strings.Join(filtered, "\n"))
+				}
+				m.filterMode = false
+				m.textInput.Placeholder = "Enter command"
+				m.textInput.Reset()
+				return m, nil
+			}
 			cmd := m.textInput.Value()
 			switch cmd {
 			case "list":
 				// Show full log file
 				m.viewport.SetContent(strings.Join(m.logLines, "\n"))
+			case "filter":
+				m.filterMode = true
+				m.textInput.Placeholder = "Введите регулярное выражение"
+				m.textInput.Reset()
+				return m, nil
 			case "quit", "exit":
 				return m, tea.Quit
 			case "help":
@@ -271,18 +301,20 @@ func (m Model) View() string {
 	histogramView := m.renderHistogram()
 	histogramBox := borderStyle.Width(m.width - borderStyle.GetHorizontalFrameSize() + 2).Render(histogramView)
 
-	// Create command input with "list" label
+	// Create command input with label depending on mode
 	inputStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("#874BFD")).
 		Padding(0, 1)
 
-	commandLabel := lipgloss.NewStyle().
-		Bold(true).
-		Render("cmd")
+	var labelText string
+	if m.filterMode {
+		labelText = lipgloss.NewStyle().Bold(true).Render("flt")
+	} else {
+		labelText = lipgloss.NewStyle().Bold(true).Render("cmd")
+	}
 
-	// Ensure command input box takes full width
-	commandInput := inputStyle.Width(m.width - inputStyle.GetHorizontalFrameSize() + 2).Render(commandLabel + " " + m.textInput.View())
+	commandInput := inputStyle.Width(m.width - inputStyle.GetHorizontalFrameSize() + 2).Render(labelText + " > " + m.textInput.View())
 
 	// Create log output view
 	logOutputStyle := lipgloss.NewStyle().
