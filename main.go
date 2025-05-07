@@ -203,11 +203,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textInput.Placeholder = "Введите регулярное выражение"
 				m.textInput.Reset()
 				return m, nil
+			case "statistic":
+				m.viewport.SetContent(buildLogStatistics(m.logLines))
 			case "quit", "exit":
 				return m, tea.Quit
 			case "help":
 				m.viewport.SetContent("Доступные команды:\n" +
 					"list - Показать все записи логов\n" +
+					"goto - Перейти к указаному таймштампу\n" +
 					"filter    - Отобразить строки, соответствующие регулярному выражению\n" +
 					"statistic - Сформировать статистику по лог файлу\n" +
 					"analyse   - Расширенный анализ лог файла\n" +
@@ -263,6 +266,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				"Введите 'list' для просмотра логов.\n\n"+
 				"Доступные команды:\n"+
 				"list - Показать все записи логов\n"+
+				"goto - Перейти к указаному таймштампу\n"+
 				"filter    - Отобразить строки, соответствующие регулярному выражению\n"+
 				"statistic - Сформировать статистику по лог файлу\n"+
 				"analyse   - Расширенный анализ лог файла\n"+
@@ -443,6 +447,104 @@ func (m Model) renderHistogram() string {
 	}
 	sb.WriteString(string(labelRow))
 
+	return sb.String()
+}
+
+// buildLogStatistics формирует статистику по logLines и возвращает строку для отображения
+func buildLogStatistics(logLines []string) string {
+	type spike struct {
+		Timestamp time.Time
+		Count     int
+	}
+	var (
+		totalLines       int
+		linesWithTS      int
+		errWrnLines      int
+		otherLines       int
+		spikes           []spike
+		longestLine      string
+		maxLen           int
+		noTimestampLines int
+		firstTS, lastTS  time.Time
+		firstTSset       bool
+		histogram        = make(map[time.Time]int)
+		reErrWrn         = regexp.MustCompile(`(?i)\b(err|wrn|error|warn)\b`)
+	)
+
+	for _, line := range logLines {
+		totalLines++
+		fields := strings.Fields(line)
+		var ts time.Time
+		var err error
+		foundTS := false
+		// Пробуем все варианты: 1, 2, 3 поля
+		for i := 1; i <= 3 && i <= len(fields); i++ {
+			ts, err = parseTimestamp(strings.Join(fields[:i], " "))
+			if err == nil {
+				foundTS = true
+				break
+			}
+		}
+		if foundTS {
+			linesWithTS++
+			if !firstTSset || ts.Before(firstTS) {
+				firstTS = ts
+				firstTSset = true
+			}
+			if ts.After(lastTS) {
+				lastTS = ts
+			}
+			minute := ts.Truncate(time.Minute)
+			histogram[minute]++
+		} else {
+			noTimestampLines++
+		}
+		if reErrWrn.MatchString(line) {
+			errWrnLines++
+		} else {
+			otherLines++
+		}
+		if len(line) > maxLen {
+			maxLen = len(line)
+			longestLine = line
+		}
+	}
+
+	for t, c := range histogram {
+		spikes = append(spikes, spike{t, c})
+	}
+	sort.Slice(spikes, func(i, j int) bool { return spikes[i].Count > spikes[j].Count })
+	topSpikes := spikes
+	if len(spikes) > 3 {
+		topSpikes = spikes[:3]
+	}
+	var avgPerMin float64
+	if firstTSset && lastTS.After(firstTS) {
+		durationMin := lastTS.Sub(firstTS).Minutes()
+		if durationMin > 0 {
+			avgPerMin = float64(linesWithTS) / durationMin
+		}
+	}
+	var sb strings.Builder
+	sb.WriteString("Статистика по лог-файлу:\n")
+	if firstTSset {
+		sb.WriteString(fmt.Sprintf("1. Начальный таймштамп: %s\n", firstTS.Format(time.RFC3339)))
+		sb.WriteString(fmt.Sprintf("2. Конечный таймштамп: %s\n", lastTS.Format(time.RFC3339)))
+	} else {
+		sb.WriteString("1-2. Нет строк с корректным таймштампом\n")
+	}
+	sb.WriteString(fmt.Sprintf("3. Количество строк: %d (с таймштампом: %d, без таймштампа: %d)\n", totalLines, linesWithTS, noTimestampLines))
+	sb.WriteString("4. Три всплеска:\n")
+	for _, s := range topSpikes {
+		sb.WriteString(fmt.Sprintf("   %s — %d строк\n", s.Timestamp.Format("2006-01-02 15:04"), s.Count))
+	}
+	ratio := 0.0
+	if totalLines > 0 {
+		ratio = float64(errWrnLines) / float64(totalLines) * 100
+	}
+	sb.WriteString(fmt.Sprintf("5. Соотношение err/wrn к остальным: %d / %d (%.2f%%)\n", errWrnLines, otherLines, ratio))
+	sb.WriteString(fmt.Sprintf("6. Среднее количество строк в минуту: %.2f\n", avgPerMin))
+	sb.WriteString(fmt.Sprintf("7. Самое длинное сообщение (%d символов):\n   %s\n", maxLen, longestLine))
 	return sb.String()
 }
 
