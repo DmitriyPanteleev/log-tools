@@ -30,6 +30,7 @@ type Model struct {
 
 	filterMode bool   // <--- новое поле: режим фильтрации
 	filterExpr string // <--- новое поле: последнее выражение фильтра
+	gotoMode   bool   // <--- добавьте это поле
 }
 
 func initialModel() Model {
@@ -193,6 +194,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textInput.Reset()
 				return m, nil
 			}
+			if m.gotoMode {
+				// Применяем goto
+				inputTS := m.textInput.Value()
+				var target time.Time
+				var parseErr error
+				for _, format := range TimestampFormats {
+					target, parseErr = time.Parse(format, inputTS)
+					if parseErr == nil {
+						break
+					}
+				}
+				if parseErr != nil {
+					m.viewport.SetContent(fmt.Sprintf("Ошибка разбора таймштампа: %v", parseErr))
+				} else {
+					var idx int
+					found := false
+					for i, line := range m.logLines {
+						fields := strings.Fields(line)
+						for n := 1; n <= 3 && n <= len(fields); n++ {
+							ts, err := parseTimestamp(strings.Join(fields[:n], " "))
+							if err == nil && (ts.Equal(target) || ts.After(target)) {
+								idx = i
+								found = true
+								break
+							}
+						}
+						if found {
+							break
+						}
+					}
+					if found {
+						m.viewport.SetContent(strings.Join(m.logLines[idx:], "\n"))
+					} else {
+						m.viewport.SetContent("Не найдено строк с таким или большим таймштампом")
+					}
+				}
+				m.gotoMode = false
+				m.textInput.Placeholder = "Enter command"
+				m.textInput.Reset()
+				return m, nil
+			}
 			cmd := m.textInput.Value()
 			switch cmd {
 			case "list":
@@ -205,6 +247,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "stat":
 				m.viewport.SetContent(buildLogStatistics(m.logLines))
+			case "goto":
+				m.gotoMode = true
+				m.textInput.Placeholder = "Введите таймштамп"
+				m.textInput.Reset()
+				return m, nil
 			case "quit", "exit":
 				return m, tea.Quit
 			case "help":
