@@ -203,7 +203,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textInput.Placeholder = "Введите регулярное выражение"
 				m.textInput.Reset()
 				return m, nil
-			case "statistic":
+			case "stat":
 				m.viewport.SetContent(buildLogStatistics(m.logLines))
 			case "quit", "exit":
 				return m, tea.Quit
@@ -211,8 +211,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.SetContent("Доступные команды:\n" +
 					"list - Показать все записи логов\n" +
 					"goto - Перейти к указаному таймштампу\n" +
-					"filter    - Отобразить строки, соответствующие регулярному выражению\n" +
-					"statistic - Сформировать статистику по лог файлу\n" +
+					"filter - Отобразить строки, соответствующие регулярному выражению\n" +
+					"stat - Сформировать статистику по лог файлу\n" +
 					"analyse   - Расширенный анализ лог файла\n" +
 					"quit - Выйти из приложения\n" +
 					"help - Показать эту справку")
@@ -267,8 +267,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				"Доступные команды:\n"+
 				"list - Показать все записи логов\n"+
 				"goto - Перейти к указаному таймштампу\n"+
-				"filter    - Отобразить строки, соответствующие регулярному выражению\n"+
-				"statistic - Сформировать статистику по лог файлу\n"+
+				"filter - Отобразить строки, соответствующие регулярному выражению\n"+
+				"stat - Сформировать статистику по лог файлу\n"+
 				"analyse   - Расширенный анализ лог файла\n"+
 				"quit - Выйти из приложения\n"+
 				"help - Показать эту справку",
@@ -462,8 +462,6 @@ func buildLogStatistics(logLines []string) string {
 		errWrnLines      int
 		otherLines       int
 		spikes           []spike
-		longestLine      string
-		maxLen           int
 		noTimestampLines int
 		firstTS, lastTS  time.Time
 		firstTSset       bool
@@ -504,10 +502,6 @@ func buildLogStatistics(logLines []string) string {
 		} else {
 			otherLines++
 		}
-		if len(line) > maxLen {
-			maxLen = len(line)
-			longestLine = line
-		}
 	}
 
 	for t, c := range histogram {
@@ -544,7 +538,6 @@ func buildLogStatistics(logLines []string) string {
 	}
 	sb.WriteString(fmt.Sprintf("5. Соотношение err/wrn к остальным: %d / %d (%.2f%%)\n", errWrnLines, otherLines, ratio))
 	sb.WriteString(fmt.Sprintf("6. Среднее количество строк в минуту: %.2f\n", avgPerMin))
-	sb.WriteString(fmt.Sprintf("7. Самое длинное сообщение (%d символов):\n   %s\n", maxLen, longestLine))
 	return sb.String()
 }
 
