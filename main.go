@@ -28,9 +28,11 @@ type Model struct {
 	maxTime   time.Time       // Latest timestamp in logs
 	err       error           // Stores any errors
 
-	filterMode bool   // <--- новое поле: режим фильтрации
-	filterExpr string // <--- новое поле: последнее выражение фильтра
-	gotoMode   bool   // <--- добавьте это поле
+	filterMode bool   // режим фильтрации
+	filterExpr string // последнее выражение фильтра
+	gotoMode   bool   // добавьте это поле
+
+	mainTimestampFormat string // <--- добавьте это поле
 }
 
 func initialModel() Model {
@@ -65,6 +67,42 @@ func parseTimestamp(timestampStr string) (time.Time, error) {
 		}
 	}
 	return t, fmt.Errorf("неизвестный формат таймштампа: %s", timestampStr)
+}
+
+// Функция для определения формата первой строки с валидным таймштампом
+func detectMainTimestampFormat(logLines []string) string {
+	for _, line := range logLines {
+		fields := strings.Fields(line)
+		for n := 1; n <= 3 && n <= len(fields); n++ {
+			tsStr := strings.Join(fields[:n], " ")
+			for _, format := range TimestampFormats {
+				if _, err := time.Parse(format, tsStr); err == nil {
+					return format
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// Функция для дополнения таймштампа до нужного формата
+func completeTimestamp(input, format string) string {
+	// Дополняем нулями, если не хватает
+	// Например, если format = "2006/01/02 15:04:05.000000"
+	// а input = "2025/04/22 12:00", то дополняем ":00.000000"
+	layoutParts := strings.Split(format, " ")
+	inputParts := strings.Split(input, " ")
+	for i := range inputParts {
+		if len(inputParts[i]) < len(layoutParts[i]) {
+			inputParts[i] += layoutParts[i][len(inputParts[i]):]
+		}
+	}
+	// Если пользователь ввёл только дату и время без секунд, добавим ":00" и т.д.
+	result := input
+	if len(input) < len(format) {
+		result += format[len(input):]
+	}
+	return result
 }
 
 // Load and process the log file
@@ -133,21 +171,26 @@ func loadLogFile(filename string) tea.Msg {
 		return errorMsg{err}
 	}
 
+	mainFormat := detectMainTimestampFormat(logLines)
+
 	return logFileLoadedMsg{
 		histogram: histogram,
 		logLines:  logLines,
 		minTime:   minTime,
 		maxTime:   maxTime,
+		// добавьте:
+		mainTimestampFormat: mainFormat,
 	}
 }
 
 // Custom message types
 type errorMsg struct{ err error }
 type logFileLoadedMsg struct {
-	histogram map[string]int
-	logLines  []string
-	minTime   time.Time
-	maxTime   time.Time
+	histogram           map[string]int
+	logLines            []string
+	minTime             time.Time
+	maxTime             time.Time
+	mainTimestampFormat string // <--- добавьте это поле
 }
 
 // Implementation of tea.Model interface - Init
@@ -195,39 +238,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if m.gotoMode {
-				// Применяем goto
 				inputTS := m.textInput.Value()
 				var target time.Time
 				var parseErr error
-				for _, format := range TimestampFormats {
-					target, parseErr = time.Parse(format, inputTS)
-					if parseErr == nil {
-						break
-					}
+
+				// Используем основной формат
+				if m.mainTimestampFormat != "" {
+					completedInput := completeTimestamp(inputTS, m.mainTimestampFormat)
+					target, parseErr = time.Parse(m.mainTimestampFormat, completedInput)
+				} else {
+					parseErr = fmt.Errorf("не удалось определить формат таймштампа")
 				}
+
 				if parseErr != nil {
 					m.viewport.SetContent(fmt.Sprintf("Ошибка разбора таймштампа: %v", parseErr))
 				} else {
-					var idx int
-					found := false
+					// Найти ближайший (меньший или больший) таймштамп
+					type lineWithTS struct {
+						idx int
+						ts  time.Time
+					}
+					var lines []lineWithTS
 					for i, line := range m.logLines {
 						fields := strings.Fields(line)
 						for n := 1; n <= 3 && n <= len(fields); n++ {
-							ts, err := parseTimestamp(strings.Join(fields[:n], " "))
-							if err == nil && (ts.Equal(target) || ts.After(target)) {
-								idx = i
-								found = true
+							ts, err := time.Parse(m.mainTimestampFormat, strings.Join(fields[:n], " "))
+							if err == nil {
+								lines = append(lines, lineWithTS{i, ts})
 								break
 							}
 						}
-						if found {
-							break
+					}
+					// Найти ближайший индекс
+					bestIdx := -1
+					bestDelta := time.Duration(1<<63 - 1)
+					for _, l := range lines {
+						delta := l.ts.Sub(target)
+						if delta < 0 {
+							delta = -delta
+						}
+						if bestIdx == -1 || delta < bestDelta || (delta == bestDelta && l.ts.After(target)) {
+							bestIdx = l.idx
+							bestDelta = delta
 						}
 					}
-					if found {
-						m.viewport.SetContent(strings.Join(m.logLines[idx:], "\n"))
+					if bestIdx != -1 {
+						m.viewport.SetContent(strings.Join(m.logLines[bestIdx:], "\n"))
 					} else {
-						m.viewport.SetContent("Не найдено строк с таким или большим таймштампом")
+						m.viewport.SetContent("Не найдено строк с таким или близким таймштампом")
 					}
 				}
 				m.gotoMode = false
@@ -306,6 +364,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.logLines = msg.logLines
 		m.minTime = msg.minTime
 		m.maxTime = msg.maxTime
+		m.mainTimestampFormat = msg.mainTimestampFormat
 
 		// Set initial content for viewport
 		m.viewport.SetContent(fmt.Sprintf(
@@ -361,6 +420,8 @@ func (m Model) View() string {
 	var labelText string
 	if m.filterMode {
 		labelText = lipgloss.NewStyle().Bold(true).Render("flt")
+	} else if m.gotoMode {
+		labelText = lipgloss.NewStyle().Bold(true).Render("gto")
 	} else {
 		labelText = lipgloss.NewStyle().Bold(true).Render("cmd")
 	}
