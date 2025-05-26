@@ -310,6 +310,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textInput.Placeholder = "Введите таймштамп"
 				m.textInput.Reset()
 				return m, nil
+			case "analyse":
+				m.viewport.SetContent(buildLogAnalysis(m.logLines))
 			case "quit", "exit":
 				return m, tea.Quit
 			case "help":
@@ -646,6 +648,63 @@ func buildLogStatistics(logLines []string) string {
 	}
 	sb.WriteString(fmt.Sprintf("5. Соотношение err/wrn к остальным: %d / %d (%.2f%%)\n", errWrnLines, otherLines, ratio))
 	sb.WriteString(fmt.Sprintf("6. Среднее количество строк в минуту: %.2f\n", avgPerMin))
+	return sb.String()
+}
+
+// normalizeLogLine удаляет таймштамп и заменяет числа, UUID, IP на плейсхолдеры
+func normalizeLogLine(line string) string {
+	fields := strings.Fields(line)
+	// Удаляем таймштамп (до 3-х первых полей, если это таймштамп)
+	for i := 1; i <= 3 && i < len(fields); i++ {
+		if _, err := parseTimestamp(strings.Join(fields[:i], " ")); err == nil {
+			line = strings.Join(fields[i:], " ")
+			break
+		}
+	}
+	// Заменяем числа, UUID, IP на плейсхолдеры
+	reNum := regexp.MustCompile(`\b\d+\b`)
+	reUUID := regexp.MustCompile(`\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b`)
+	reIP := regexp.MustCompile(`\b\d{1,3}(?:\.\d{1,3}){3}\b`)
+	reHex := regexp.MustCompile(`\b0x[0-9a-fA-F]+\b`)
+	line = reUUID.ReplaceAllString(line, "<UUID>")
+	line = reIP.ReplaceAllString(line, "<IP>")
+	line = reHex.ReplaceAllString(line, "<HEX>")
+	line = reNum.ReplaceAllString(line, "<NUM>")
+	return line
+}
+
+// buildLogAnalysis формирует сводку по самым частым паттернам сообщений
+func buildLogAnalysis(logLines []string) string {
+	type patternStat struct {
+		Pattern string
+		Count   int
+		Example string
+	}
+	patterns := make(map[string]*patternStat)
+	for _, line := range logLines {
+		norm := normalizeLogLine(line)
+		if stat, ok := patterns[norm]; ok {
+			stat.Count++
+		} else {
+			patterns[norm] = &patternStat{Pattern: norm, Count: 1, Example: line}
+		}
+	}
+	// Собираем и сортируем по убыванию
+	var stats []patternStat
+	for _, v := range patterns {
+		stats = append(stats, *v)
+	}
+	sort.Slice(stats, func(i, j int) bool { return stats[i].Count > stats[j].Count })
+
+	topN := 7
+	if len(stats) < topN {
+		topN = len(stats)
+	}
+	var sb strings.Builder
+	sb.WriteString("Анализ лог-файла: самые частые паттерны сообщений\n")
+	for i := 0; i < topN; i++ {
+		sb.WriteString(fmt.Sprintf("%d. [%d раз]\n   Паттерн: %s\n   Пример: %s\n", i+1, stats[i].Count, stats[i].Pattern, stats[i].Example))
+	}
 	return sb.String()
 }
 
