@@ -705,6 +705,29 @@ func buildLogAnalysis(logLines []string) string {
 	for i := 0; i < topN; i++ {
 		sb.WriteString(fmt.Sprintf("%d. [%d раз]\n   Паттерн: %s\n   Пример: %s\n", i+1, stats[i].Count, stats[i].Pattern, stats[i].Example))
 	}
+
+	// --- Новый блок: редкие паттерны ---
+	var rareStats []patternStat
+	for _, s := range stats {
+		if s.Count <= 2 {
+			rareStats = append(rareStats, s)
+		}
+	}
+	sort.Slice(rareStats, func(i, j int) bool { return rareStats[i].Count < rareStats[j].Count })
+
+	rareN := 5
+	if len(rareStats) < rareN {
+		rareN = len(rareStats)
+	}
+	if rareN > 0 {
+		sb.WriteString("\nРедкие (уникальные или почти уникальные) паттерны:\n")
+		for i := 0; i < rareN; i++ {
+			sb.WriteString(fmt.Sprintf("%d. [%d раз]\n   Паттерн: %s\n   Пример: %s\n", i+1, rareStats[i].Count, rareStats[i].Pattern, rareStats[i].Example))
+		}
+	} else {
+		sb.WriteString("\nНет уникальных или редких паттернов.\n")
+	}
+
 	return sb.String()
 }
 
