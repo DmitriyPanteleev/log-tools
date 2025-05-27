@@ -1,6 +1,6 @@
 package main
 
-// TimestampFormats contains all supported timestamp format patterns
+// TimestampFormats здесь перечислены форматы таймштампов, которые могут использоваться в логах.
 var TimestampFormats = []string{
 	"2006/01/02 15:04:05.000000",          // news-notifier.log и udf.log
 	"2006-01-02 15:04:05,000000000",       // papertrading.log
