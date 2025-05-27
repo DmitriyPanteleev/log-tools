@@ -728,7 +728,7 @@ func buildLogAnalysis(logLines []string) string {
 		sb.WriteString("\nНет уникальных или редких паттернов.\n")
 	}
 
-	// --- Новый блок: длинные сообщения ---
+	// --- Длинные сообщения ---
 	type longLine struct {
 		Len  int
 		Line string
@@ -748,6 +748,33 @@ func buildLogAnalysis(logLines []string) string {
 		for i := 0; i < longN; i++ {
 			sb.WriteString(fmt.Sprintf("%d. [%d символов]\n   %s\n", i+1, longLines[i].Len, longLines[i].Line))
 		}
+	}
+
+	// --- Новый блок: подозрительные сообщения ---
+	suspiciousWords := []string{
+		"fail", "exception", "panic", "critical", "abort", "timeout", "traceback", "unreachable", "unhandled", "fatal", "segfault", "stacktrace",
+	}
+	sb.WriteString("\nПодозрительные сообщения по ключевым словам:\n")
+	foundAny := false
+	for _, word := range suspiciousWords {
+		re := regexp.MustCompile(`(?i)\b` + word + `\b`)
+		var matches []string
+		for i := len(logLines) - 1; i >= 0 && len(matches) < 3; i-- {
+			if re.MatchString(logLines[i]) {
+				matches = append(matches, logLines[i])
+			}
+		}
+		if len(matches) > 0 {
+			foundAny = true
+			sb.WriteString(fmt.Sprintf("  %s (последние %d):\n", word, len(matches)))
+			// Выводим в хронологическом порядке (от старых к новым)
+			for i := len(matches) - 1; i >= 0; i-- {
+				sb.WriteString(fmt.Sprintf("    %s\n", matches[i]))
+			}
+		}
+	}
+	if !foundAny {
+		sb.WriteString("  Не найдено подозрительных сообщений.\n")
 	}
 
 	return sb.String()
