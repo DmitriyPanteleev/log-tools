@@ -706,7 +706,7 @@ func buildLogAnalysis(logLines []string) string {
 		sb.WriteString(fmt.Sprintf("%d. [%d раз]\n   Паттерн: %s\n   Пример: %s\n", i+1, stats[i].Count, stats[i].Pattern, stats[i].Example))
 	}
 
-	// --- Новый блок: редкие паттерны ---
+	// --- Редкие паттерны ---
 	var rareStats []patternStat
 	for _, s := range stats {
 		if s.Count <= 2 {
@@ -726,6 +726,28 @@ func buildLogAnalysis(logLines []string) string {
 		}
 	} else {
 		sb.WriteString("\nНет уникальных или редких паттернов.\n")
+	}
+
+	// --- Новый блок: длинные сообщения ---
+	type longLine struct {
+		Len  int
+		Line string
+	}
+	var longLines []longLine
+	for _, line := range logLines {
+		longLines = append(longLines, longLine{Len: len(line), Line: line})
+	}
+	sort.Slice(longLines, func(i, j int) bool { return longLines[i].Len > longLines[j].Len })
+
+	longN := 5
+	if len(longLines) < longN {
+		longN = len(longLines)
+	}
+	if longN > 0 {
+		sb.WriteString("\nСамые длинные сообщения:\n")
+		for i := 0; i < longN; i++ {
+			sb.WriteString(fmt.Sprintf("%d. [%d символов]\n   %s\n", i+1, longLines[i].Len, longLines[i].Line))
+		}
 	}
 
 	return sb.String()
