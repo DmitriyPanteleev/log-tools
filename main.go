@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"regexp" // добавьте этот импорт
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -15,31 +15,31 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Model represents the application state
+// Model — структура состояния приложения
 type Model struct {
-	histogram map[string]int  // Stores log frequency data
-	logLines  []string        // Stores log file lines
-	viewport  viewport.Model  // For scrolling through logs
-	textInput textinput.Model // For command input
-	logFile   string          // Name of the log file
-	width     int             // Terminal width
-	height    int             // Terminal height
-	minTime   time.Time       // Earliest timestamp in logs
-	maxTime   time.Time       // Latest timestamp in logs
-	err       error           // Stores any errors
+	histogram map[string]int  // Частота логов по времени
+	logLines  []string        // Строки лог-файла
+	viewport  viewport.Model  // Для прокрутки логов
+	textInput textinput.Model // Для ввода команд
+	logFile   string          // Имя лог-файла
+	width     int             // Ширина терминала
+	height    int             // Высота терминала
+	minTime   time.Time       // Самый ранний таймштамп в логах
+	maxTime   time.Time       // Самый поздний таймштамп в логах
+	err       error           // Ошибки
 
 	filterMode bool   // режим фильтрации
 	filterExpr string // последнее выражение фильтра
-	gotoMode   bool   // добавьте это поле
+	gotoMode   bool   // режим перехода по таймштампу
 
-	mainTimestampFormat string // <--- добавьте это поле
+	mainTimestampFormat string // основной формат таймштампа, определённый из первой строки
 }
 
 func initialModel() Model {
 	ti := textinput.New()
 	ti.Placeholder = "Enter command"
 	ti.Focus()
-	ti.Prompt = "" // <--- добавьте эту строку
+	ti.Prompt = ""
 
 	vp := viewport.New(80, 10)
 	vp.SetContent("Log output will appear here...")
@@ -55,11 +55,11 @@ func initialModel() Model {
 	}
 }
 
-// Parse timestamp from log line
+// Разбор таймштампа из строки лога
 func parseTimestamp(timestampStr string) (time.Time, error) {
 	var t time.Time
 	var err error
-	// Try all supported formats
+	// Пробуем все поддерживаемые форматы
 	for _, format := range TimestampFormats {
 		t, err = time.Parse(format, timestampStr)
 		if err == nil {
@@ -105,7 +105,7 @@ func completeTimestamp(input, format string) string {
 	return result
 }
 
-// Load and process the log file
+// Загрузка и обработка лог-файла
 func loadLogFile(filename string) tea.Msg {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -123,38 +123,38 @@ func loadLogFile(filename string) tea.Msg {
 		line := scanner.Text()
 		logLines = append(logLines, line)
 
-		// Parse timestamp for histogram
+		// Разбор таймштампа для гистограммы
 		fields := strings.Fields(line)
 		if len(fields) < 1 {
 			continue
 		}
 
-		// Try different timestamp formats
+		// Пробуем разные форматы таймштампа
 		var timestamp time.Time
 		var err error
 
-		// First try just the first field
+		// Сначала пробуем только первое поле
 		timestampStr := fields[0]
 		timestamp, err = parseTimestamp(timestampStr)
 
-		// If that failed, try first two fields
+		// Если не получилось — пробуем первые два поля
 		if err != nil && len(fields) >= 2 {
 			timestampStr = fields[0] + " " + fields[1]
 			timestamp, err = parseTimestamp(timestampStr)
 		}
 
-		// If that failed, try first three fields
+		// Если не получилось — пробуем первые три поля
 		if err != nil && len(fields) >= 3 {
 			timestampStr = fields[0] + " " + fields[1] + " " + fields[2]
 			timestamp, err = parseTimestamp(timestampStr)
 		}
 
 		if err != nil {
-			// Skip if we couldn't parse the timestamp
+			// Пропускаем, если не удалось разобрать таймштамп
 			continue
 		}
 
-		// Update min and max times
+		// Обновляем минимальное и максимальное время
 		if timestamp.Before(minTime) {
 			minTime = timestamp
 		}
@@ -162,7 +162,7 @@ func loadLogFile(filename string) tea.Msg {
 			maxTime = timestamp
 		}
 
-		// Group by minute for the histogram
+		// Группируем по минутам для гистограммы
 		minute := timestamp.Format("2006-01-02 15:04")
 		histogram[minute]++
 	}
@@ -174,26 +174,25 @@ func loadLogFile(filename string) tea.Msg {
 	mainFormat := detectMainTimestampFormat(logLines)
 
 	return logFileLoadedMsg{
-		histogram: histogram,
-		logLines:  logLines,
-		minTime:   minTime,
-		maxTime:   maxTime,
-		// добавьте:
+		histogram:           histogram,
+		logLines:            logLines,
+		minTime:             minTime,
+		maxTime:             maxTime,
 		mainTimestampFormat: mainFormat,
 	}
 }
 
-// Custom message types
+// Типы сообщений для tea
 type errorMsg struct{ err error }
 type logFileLoadedMsg struct {
 	histogram           map[string]int
 	logLines            []string
 	minTime             time.Time
 	maxTime             time.Time
-	mainTimestampFormat string // <--- добавьте это поле
+	mainTimestampFormat string // Основной формат таймштампа, определённый из первой строки
 }
 
-// Implementation of tea.Model interface - Init
+// Реализация tea.Model — Init
 func (m Model) Init() tea.Cmd {
 	if len(os.Args) < 2 {
 		return func() tea.Msg {
@@ -207,7 +206,7 @@ func (m Model) Init() tea.Cmd {
 	}
 }
 
-// Implementation of tea.Model interface - Update
+// Реализация tea.Model — Update
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
@@ -296,7 +295,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd := m.textInput.Value()
 			switch cmd {
 			case "list":
-				// Show full log file
+				// Показать весь лог-файл
 				m.viewport.SetContent(strings.Join(m.logLines, "\n"))
 			case "filter":
 				m.filterMode = true
@@ -334,8 +333,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-		// Define styles temporarily to get border sizes
-		// Note: It might be better to define these styles once in the model
+		// Временно определяем стили для получения размеров рамок
+		// Лучше определить эти стили один раз в модели
 		logOutputStyle := lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#874BFD"))
@@ -345,20 +344,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			BorderForeground(lipgloss.Color("#874BFD")).
 			Padding(0, 1)
 
-		// Adjust component sizes, accounting for border/padding widths
-		histogramHeight := 10 // Height for histogram area
-		inputHeight := 3      // Height for input area (including border)
+		// Корректируем размеры компонентов с учётом рамок/отступов
+		histogramHeight := 10 // Высота области гистограммы
+		inputHeight := 3      // Высота области ввода (с рамкой)
 
-		// Calculate available width inside borders
+		// Вычисляем доступную ширину внутри рамок
 		viewportWidth := m.width - logOutputStyle.GetHorizontalFrameSize()
 		inputWidth := m.width - inputStyle.GetHorizontalFrameSize()
 
-		// Viewport gets the rest of the space vertically
+		// Viewport занимает оставшееся место по вертикали
 		m.viewport.Height = m.height - histogramHeight - inputHeight
 		m.viewport.Width = viewportWidth
 
-		// Make sure textInput has correct width, accounting for label and input border/padding
-		// Label "list " is 5 chars wide.
+		// Устанавливаем ширину textInput с учётом метки и рамки/отступа
+		// Метка "list " — 5 символов
 		m.textInput.Width = inputWidth - 5
 
 	case logFileLoadedMsg:
@@ -368,7 +367,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.maxTime = msg.maxTime
 		m.mainTimestampFormat = msg.mainTimestampFormat
 
-		// Set initial content for viewport
+		// Устанавливаем начальное содержимое viewport
 		m.viewport.SetContent(fmt.Sprintf(
 			"Файл логов загружен: %s\n%d записей найдено.\n"+
 				"Введите 'list' для просмотра логов.\n\n"+
@@ -386,7 +385,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 	}
 
-	// Update components
+	// Обновляем компоненты
 	var cmd tea.Cmd
 	m.textInput, cmd = m.textInput.Update(msg)
 	cmds = append(cmds, cmd)
@@ -397,23 +396,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// Implementation of tea.Model interface - View
+// Реализация tea.Model — View
 func (m Model) View() string {
 	if m.err != nil {
 		return fmt.Sprintf("Ошибка: %v\n\nНажмите любую клавишу для выхода.", m.err)
 	}
 
-	// Define styles
+	// Определяем стили
 	borderStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("#874BFD")).
 		Padding(0, 1)
 
-	// Create histogram visualization
+	// Визуализация гистограммы
 	histogramView := m.renderHistogram()
 	histogramBox := borderStyle.Width(m.width - borderStyle.GetHorizontalFrameSize() + 2).Render(histogramView)
 
-	// Create command input with label depending on mode
+	// Ввод команды с меткой в зависимости от режима
 	inputStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("#874BFD")).
@@ -430,14 +429,14 @@ func (m Model) View() string {
 
 	commandInput := inputStyle.Width(m.width - inputStyle.GetHorizontalFrameSize() + 2).Render(labelText + " > " + m.textInput.View())
 
-	// Create log output view
+	// Область вывода логов
 	logOutputStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("#874BFD"))
-	// Ensure log output box takes full width
+	// Обеспечиваем полную ширину для вывода логов
 	logOutput := logOutputStyle.Width(m.width - logOutputStyle.GetHorizontalFrameSize()).Render(m.viewport.View())
 
-	// Combine all parts
+	// Объединяем все части
 	return lipgloss.JoinVertical(lipgloss.Left,
 		histogramBox,
 		commandInput,
@@ -445,7 +444,7 @@ func (m Model) View() string {
 	)
 }
 
-// Render the histogram
+// Визуализация гистограммы
 func (m Model) renderHistogram() string {
 	if len(m.histogram) == 0 {
 		return "Загрузка гистограммы..."
