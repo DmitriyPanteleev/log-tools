@@ -751,23 +751,46 @@ func buildLogAnalysis(logLines []string) string {
 	}
 
 	// --- Новый блок: подозрительные сообщения ---
-	suspiciousWords := []string{
-		"fail", "exception", "panic", "critical", "abort", "timeout", "traceback", "unreachable", "unhandled", "fatal", "segfault", "stacktrace",
+	type suspiciousPattern struct {
+		Label string
+		Regex *regexp.Regexp
 	}
-	sb.WriteString("\nПодозрительные сообщения по ключевым словам:\n")
+	suspiciousPatterns := []suspiciousPattern{
+		{"fail", regexp.MustCompile(`(?i)\bfail(ed|ing|s)?\b`)},
+		{"exception", regexp.MustCompile(`(?i)\bexception(s)?\b`)},
+		{"panic", regexp.MustCompile(`(?i)\bpanic(s|ed|ing)?\b`)},
+		{"critical", regexp.MustCompile(`(?i)\bcritical\b`)},
+		{"abort", regexp.MustCompile(`(?i)\babort(ed|ing|s)?\b`)},
+		{"timeout", regexp.MustCompile(`(?i)\btime\s?out(s|ed|ing)?\b`)},
+		{"traceback", regexp.MustCompile(`(?i)\btraceback\b`)},
+		{"unreachable", regexp.MustCompile(`(?i)\bunreachable\b`)},
+		{"unhandled", regexp.MustCompile(`(?i)\bunhandled\b`)},
+		{"fatal", regexp.MustCompile(`(?i)\bfatal\b`)},
+		{"segfault", regexp.MustCompile(`(?i)\bsegfault\b`)},
+		{"stacktrace", regexp.MustCompile(`(?i)\bstack\s?trace\b`)},
+		// Контекстные фразы:
+		{"not found", regexp.MustCompile(`(?i)not found`)},
+		{"could not", regexp.MustCompile(`(?i)could not`)},
+		{"no such file", regexp.MustCompile(`(?i)no such file`)},
+		{"connection refused", regexp.MustCompile(`(?i)connection refused`)},
+		{"permission denied", regexp.MustCompile(`(?i)permission denied`)},
+		{"out of memory", regexp.MustCompile(`(?i)out of memory`)},
+		{"disk full", regexp.MustCompile(`(?i)disk full`)},
+		{"broken pipe", regexp.MustCompile(`(?i)broken pipe`)},
+	}
+
+	sb.WriteString("\nПодозрительные сообщения по ключевым словам и шаблонам:\n")
 	foundAny := false
-	for _, word := range suspiciousWords {
-		re := regexp.MustCompile(`(?i)\b` + word + `\b`)
+	for _, pat := range suspiciousPatterns {
 		var matches []string
 		for i := len(logLines) - 1; i >= 0 && len(matches) < 3; i-- {
-			if re.MatchString(logLines[i]) {
+			if pat.Regex.MatchString(logLines[i]) {
 				matches = append(matches, logLines[i])
 			}
 		}
 		if len(matches) > 0 {
 			foundAny = true
-			sb.WriteString(fmt.Sprintf("  %s (последние %d):\n", word, len(matches)))
-			// Выводим в хронологическом порядке (от старых к новым)
+			sb.WriteString(fmt.Sprintf("  %s (последние %d):\n", pat.Label, len(matches)))
 			for i := len(matches) - 1; i >= 0; i-- {
 				sb.WriteString(fmt.Sprintf("    %s\n", matches[i]))
 			}
