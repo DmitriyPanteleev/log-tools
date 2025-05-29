@@ -799,6 +799,55 @@ func buildLogAnalysis(logLines []string) string {
 		sb.WriteString("  Не найдено подозрительных сообщений.\n")
 	}
 
+	// --- N-грамм анализ ---
+	type ngramStat struct {
+		Phrase string
+		Count  int
+	}
+	bigramFreq := make(map[string]int)
+	trigramFreq := make(map[string]int)
+	for _, line := range logLines {
+		norm := normalizeLogLine(line)
+		words := strings.Fields(norm)
+		// Биграммы
+		for i := 0; i < len(words)-1; i++ {
+			bigram := words[i] + " " + words[i+1]
+			bigramFreq[bigram]++
+		}
+		// Триграммы
+		for i := 0; i < len(words)-2; i++ {
+			trigram := words[i] + " " + words[i+1] + " " + words[i+2]
+			trigramFreq[trigram]++
+		}
+	}
+	// Топ-10 биграмм
+	var bigramStats []ngramStat
+	for k, v := range bigramFreq {
+		bigramStats = append(bigramStats, ngramStat{k, v})
+	}
+	sort.Slice(bigramStats, func(i, j int) bool { return bigramStats[i].Count > bigramStats[j].Count })
+	if len(bigramStats) > 10 {
+		bigramStats = bigramStats[:10]
+	}
+	// Топ-10 триграмм
+	var trigramStats []ngramStat
+	for k, v := range trigramFreq {
+		trigramStats = append(trigramStats, ngramStat{k, v})
+	}
+	sort.Slice(trigramStats, func(i, j int) bool { return trigramStats[i].Count > trigramStats[j].Count })
+	if len(trigramStats) > 10 {
+		trigramStats = trigramStats[:10]
+	}
+
+	sb.WriteString("\nТоп-10 биграмм (двухсловных фраз):\n")
+	for i, stat := range bigramStats {
+		sb.WriteString(fmt.Sprintf("%d. [%d] %s\n", i+1, stat.Count, stat.Phrase))
+	}
+	sb.WriteString("\nТоп-10 триграмм (трёхсловных фраз):\n")
+	for i, stat := range trigramStats {
+		sb.WriteString(fmt.Sprintf("%d. [%d] %s\n", i+1, stat.Count, stat.Phrase))
+	}
+
 	return sb.String()
 }
 
