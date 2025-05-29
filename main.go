@@ -804,47 +804,28 @@ func buildLogAnalysis(logLines []string) string {
 		Phrase string
 		Count  int
 	}
-	bigramFreq := make(map[string]int)
-	trigramFreq := make(map[string]int)
+	fourgramFreq := make(map[string]int)
 	for _, line := range logLines {
 		norm := normalizeLogLine(line)
 		words := strings.Fields(norm)
-		// Биграммы
-		for i := 0; i < len(words)-1; i++ {
-			bigram := words[i] + " " + words[i+1]
-			bigramFreq[bigram]++
-		}
-		// Триграммы
-		for i := 0; i < len(words)-2; i++ {
-			trigram := words[i] + " " + words[i+1] + " " + words[i+2]
-			trigramFreq[trigram]++
+		// Четырёхграммы
+		for i := 0; i < len(words)-3; i++ {
+			fourgram := words[i] + " " + words[i+1] + " " + words[i+2] + " " + words[i+3]
+			fourgramFreq[fourgram]++
 		}
 	}
-	// Топ-10 биграмм
-	var bigramStats []ngramStat
-	for k, v := range bigramFreq {
-		bigramStats = append(bigramStats, ngramStat{k, v})
+	// Топ-10 четырёхграмм
+	var fourgramStats []ngramStat
+	for k, v := range fourgramFreq {
+		fourgramStats = append(fourgramStats, ngramStat{k, v})
 	}
-	sort.Slice(bigramStats, func(i, j int) bool { return bigramStats[i].Count > bigramStats[j].Count })
-	if len(bigramStats) > 10 {
-		bigramStats = bigramStats[:10]
-	}
-	// Топ-10 триграмм
-	var trigramStats []ngramStat
-	for k, v := range trigramFreq {
-		trigramStats = append(trigramStats, ngramStat{k, v})
-	}
-	sort.Slice(trigramStats, func(i, j int) bool { return trigramStats[i].Count > trigramStats[j].Count })
-	if len(trigramStats) > 10 {
-		trigramStats = trigramStats[:10]
+	sort.Slice(fourgramStats, func(i, j int) bool { return fourgramStats[i].Count > fourgramStats[j].Count })
+	if len(fourgramStats) > 10 {
+		fourgramStats = fourgramStats[:10]
 	}
 
-	sb.WriteString("\nТоп-10 биграмм (двухсловных фраз):\n")
-	for i, stat := range bigramStats {
-		sb.WriteString(fmt.Sprintf("%d. [%d] %s\n", i+1, stat.Count, stat.Phrase))
-	}
-	sb.WriteString("\nТоп-10 триграмм (трёхсловных фраз):\n")
-	for i, stat := range trigramStats {
+	sb.WriteString("\nТоп-10 четырёхграмм (четырёхсловных фраз):\n")
+	for i, stat := range fourgramStats {
 		sb.WriteString(fmt.Sprintf("%d. [%d] %s\n", i+1, stat.Count, stat.Phrase))
 	}
 
