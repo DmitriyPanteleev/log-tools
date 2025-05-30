@@ -110,5 +110,3 @@ go build -o log-tools main.go formats.go
 Проект распространяется под лицензией [GNU GPL v3](LICENSE).
 
 ---
-
-> _log-tools — ваш быстрый помощник для анализа логов!_
