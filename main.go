@@ -12,7 +12,6 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // Model — структура состояния приложения
@@ -59,7 +58,6 @@ func initialModel() Model {
 func parseTimestamp(timestampStr string) (time.Time, error) {
 	var t time.Time
 	var err error
-	// Пробуем все поддерживаемые форматы
 	for _, format := range TimestampFormats {
 		t, err = time.Parse(format, timestampStr)
 		if err == nil {
@@ -87,9 +85,6 @@ func detectMainTimestampFormat(logLines []string) string {
 
 // Функция для дополнения таймштампа до нужного формата
 func completeTimestamp(input, format string) string {
-	// Дополняем нулями, если не хватает
-	// Например, если format = "2006/01/02 15:04:05.000000"
-	// а input = "2025/04/22 12:00", то дополняем ":00.000000"
 	layoutParts := strings.Split(format, " ")
 	inputParts := strings.Split(input, " ")
 	for i := range inputParts {
@@ -97,7 +92,6 @@ func completeTimestamp(input, format string) string {
 			inputParts[i] += layoutParts[i][len(inputParts[i]):]
 		}
 	}
-	// Если пользователь ввёл только дату и время без секунд, добавим ":00" и т.д.
 	result := input
 	if len(input) < len(format) {
 		result += format[len(input):]
@@ -123,38 +117,28 @@ func loadLogFile(filename string) tea.Msg {
 		line := scanner.Text()
 		logLines = append(logLines, line)
 
-		// Разбор таймштампа для гистограммы
 		fields := strings.Fields(line)
 		if len(fields) < 1 {
 			continue
 		}
 
-		// Пробуем разные форматы таймштампа
 		var timestamp time.Time
 		var err error
 
-		// Сначала пробуем только первое поле
 		timestampStr := fields[0]
 		timestamp, err = parseTimestamp(timestampStr)
-
-		// Если не получилось — пробуем первые два поля
 		if err != nil && len(fields) >= 2 {
 			timestampStr = fields[0] + " " + fields[1]
 			timestamp, err = parseTimestamp(timestampStr)
 		}
-
-		// Если не получилось — пробуем первые три поля
 		if err != nil && len(fields) >= 3 {
 			timestampStr = fields[0] + " " + fields[1] + " " + fields[2]
 			timestamp, err = parseTimestamp(timestampStr)
 		}
-
 		if err != nil {
-			// Пропускаем, если не удалось разобрать таймштамп
 			continue
 		}
 
-		// Обновляем минимальное и максимальное время
 		if timestamp.Before(minTime) {
 			minTime = timestamp
 		}
@@ -162,7 +146,6 @@ func loadLogFile(filename string) tea.Msg {
 			maxTime = timestamp
 		}
 
-		// Группируем по минутам для гистограммы
 		minute := timestamp.Format("2006-01-02 15:04")
 		histogram[minute]++
 	}
@@ -189,7 +172,7 @@ type logFileLoadedMsg struct {
 	logLines            []string
 	minTime             time.Time
 	maxTime             time.Time
-	mainTimestampFormat string // Основной формат таймштампа, определённый из первой строки
+	mainTimestampFormat string
 }
 
 // Реализация tea.Model — Init
@@ -217,7 +200,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case tea.KeyEnter:
 			if m.filterMode {
-				// Применяем фильтр
 				re, err := regexp.Compile(m.textInput.Value())
 				if err != nil {
 					m.viewport.SetContent(fmt.Sprintf("Ошибка в регулярном выражении: %v", err))
@@ -241,7 +223,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				var target time.Time
 				var parseErr error
 
-				// Используем основной формат
 				if m.mainTimestampFormat != "" {
 					completedInput := completeTimestamp(inputTS, m.mainTimestampFormat)
 					target, parseErr = time.Parse(m.mainTimestampFormat, completedInput)
@@ -252,7 +233,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if parseErr != nil {
 					m.viewport.SetContent(fmt.Sprintf("Ошибка разбора таймштампа: %v", parseErr))
 				} else {
-					// Найти ближайший (меньший или больший) таймштамп
 					type lineWithTS struct {
 						idx int
 						ts  time.Time
@@ -268,7 +248,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							}
 						}
 					}
-					// Найти ближайший индекс
 					bestIdx := -1
 					bestDelta := time.Duration(1<<63 - 1)
 					for _, l := range lines {
@@ -295,7 +274,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd := m.textInput.Value()
 			switch cmd {
 			case "list":
-				// Показать весь лог-файл
 				m.viewport.SetContent(strings.Join(m.logLines, "\n"))
 			case "filter":
 				m.filterMode = true
@@ -333,31 +311,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-		// Временно определяем стили для получения размеров рамок
-		// Лучше определить эти стили один раз в модели
-		logOutputStyle := lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#874BFD"))
+		histogramHeight := 10
+		inputHeight := 3
 
-		inputStyle := lipgloss.NewStyle().
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("#874BFD")).
-			Padding(0, 1)
+		viewportWidth := m.width - 4
+		inputWidth := m.width - 4
 
-		// Корректируем размеры компонентов с учётом рамок/отступов
-		histogramHeight := 10 // Высота области гистограммы
-		inputHeight := 3      // Высота области ввода (с рамкой)
-
-		// Вычисляем доступную ширину внутри рамок
-		viewportWidth := m.width - logOutputStyle.GetHorizontalFrameSize()
-		inputWidth := m.width - inputStyle.GetHorizontalFrameSize()
-
-		// Viewport занимает оставшееся место по вертикали
 		m.viewport.Height = m.height - histogramHeight - inputHeight
 		m.viewport.Width = viewportWidth
 
-		// Устанавливаем ширину textInput с учётом метки и рамки/отступа
-		// Метка "list " — 5 символов
 		m.textInput.Width = inputWidth - 5
 
 	case logFileLoadedMsg:
@@ -367,7 +329,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.maxTime = msg.maxTime
 		m.mainTimestampFormat = msg.mainTimestampFormat
 
-		// Устанавливаем начальное содержимое viewport
 		m.viewport.SetContent(fmt.Sprintf(
 			"Файл логов загружен: %s\n%d записей найдено.\n"+
 				"Введите 'list' для просмотра логов.\n\n"+
@@ -385,7 +346,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 	}
 
-	// Обновляем компоненты
 	var cmd tea.Cmd
 	m.textInput, cmd = m.textInput.Update(msg)
 	cmds = append(cmds, cmd)
@@ -394,169 +354,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, cmd)
 
 	return m, tea.Batch(cmds...)
-}
-
-// Реализация tea.Model — View
-func (m Model) View() string {
-	if m.err != nil {
-		return fmt.Sprintf("Ошибка: %v\n\nНажмите любую клавишу для выхода.", m.err)
-	}
-
-	// Определяем стили
-	borderStyle := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#874BFD")).
-		Padding(0, 1)
-
-	// Визуализация гистограммы
-	histogramView := m.renderHistogram()
-	histogramBox := borderStyle.Width(m.width - borderStyle.GetHorizontalFrameSize() + 2).Render(histogramView)
-
-	// Ввод команды с меткой в зависимости от режима
-	inputStyle := lipgloss.NewStyle().
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("#874BFD")).
-		Padding(0, 1)
-
-	var labelText string
-	if m.filterMode {
-		labelText = lipgloss.NewStyle().Bold(true).Render("flt")
-	} else if m.gotoMode {
-		labelText = lipgloss.NewStyle().Bold(true).Render("gto")
-	} else {
-		labelText = lipgloss.NewStyle().Bold(true).Render("cmd")
-	}
-
-	commandInput := inputStyle.Width(m.width - inputStyle.GetHorizontalFrameSize() + 2).Render(labelText + " > " + m.textInput.View())
-
-	// Область вывода логов
-	logOutputStyle := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#874BFD"))
-	// Обеспечиваем полную ширину для вывода логов
-	logOutput := logOutputStyle.Width(m.width - logOutputStyle.GetHorizontalFrameSize()).Render(m.viewport.View())
-
-	// Объединяем все части
-	return lipgloss.JoinVertical(lipgloss.Left,
-		histogramBox,
-		commandInput,
-		logOutput,
-	)
-}
-
-// Визуализация гистограммы
-func (m Model) renderHistogram() string {
-	if len(m.histogram) == 0 {
-		return "Загрузка гистограммы..."
-	}
-
-	// Определяем ширину области для гистограммы (без рамок)
-	histWidth := m.width - 4 // 2 символа на каждую сторону рамки
-
-	// Получаем все времена из гистограммы и сортируем
-	var times []string
-	for t := range m.histogram {
-		times = append(times, t)
-	}
-	sort.Strings(times)
-	if len(times) == 0 || histWidth < 2 {
-		return "Недостаточно данных для гистограммы"
-	}
-
-	// Преобразуем строки времени в time.Time
-	var timePoints []time.Time
-	for _, t := range times {
-		parsed, err := time.Parse("2006-01-02 15:04", t)
-		if err == nil {
-			timePoints = append(timePoints, parsed)
-		}
-	}
-	if len(timePoints) == 0 {
-		return "Ошибка разбора времени"
-	}
-
-	// Находим минимальное и максимальное время
-	startTime := timePoints[0]
-	endTime := timePoints[len(timePoints)-1]
-	totalDuration := endTime.Sub(startTime)
-	if totalDuration == 0 {
-		totalDuration = time.Minute // чтобы не делить на 0
-	}
-
-	// Разбиваем диапазон на histWidth интервалов
-	binCounts := make([]int, histWidth)
-	binStarts := make([]time.Time, histWidth)
-	binDuration := totalDuration / time.Duration(histWidth)
-
-	for i := 0; i < histWidth; i++ {
-		binStarts[i] = startTime.Add(time.Duration(i) * binDuration)
-	}
-
-	// Для каждой точки времени определяем, в какой интервал она попадает
-	for tStr, count := range m.histogram {
-		t, err := time.Parse("2006-01-02 15:04", tStr)
-		if err != nil {
-			continue
-		}
-		binIdx := int(t.Sub(startTime) / binDuration)
-		if binIdx >= histWidth {
-			binIdx = histWidth - 1
-		}
-		binCounts[binIdx] += count
-	}
-
-	// Находим максимальное значение для масштабирования
-	maxCount := 0
-	for _, c := range binCounts {
-		if c > maxCount {
-			maxCount = c
-		}
-	}
-	if maxCount == 0 {
-		maxCount = 1
-	}
-
-	histHeight := 5
-	var sb strings.Builder
-
-	// Рисуем столбцы
-	for i := 0; i < histHeight; i++ {
-		for _, count := range binCounts {
-			barHeight := (count * histHeight) / maxCount
-			if count > 0 && barHeight == 0 {
-				barHeight = 1
-			}
-			if histHeight-i-1 < barHeight {
-				sb.WriteString("█")
-			} else {
-				sb.WriteString(" ")
-			}
-		}
-		sb.WriteString("\n")
-	}
-
-	// Подписи: начало, середина, конец
-	startLabel := startTime.Format("2006-01-02 15:04")
-	midLabel := startTime.Add(totalDuration / 2).Format("2006-01-02 15:04")
-	endLabel := endTime.Format("2006-01-02 15:04")
-
-	// Размещаем подписи равномерно
-	labelRow := make([]rune, histWidth)
-	for i := range labelRow {
-		labelRow[i] = ' '
-	}
-	copy(labelRow, []rune(startLabel))
-	midPos := histWidth/2 - len(midLabel)/2
-	if midPos+len(midLabel) < histWidth {
-		copy(labelRow[midPos:], []rune(midLabel))
-	}
-	endPos := histWidth - len(endLabel)
-	if endPos >= 0 {
-		copy(labelRow[endPos:], []rune(endLabel))
-	}
-	sb.WriteString(string(labelRow))
-
-	return sb.String()
 }
 
 // buildLogStatistics формирует статистику по logLines и возвращает строку для отображения
@@ -584,7 +381,6 @@ func buildLogStatistics(logLines []string) string {
 		var ts time.Time
 		var err error
 		foundTS := false
-		// Пробуем все варианты: 1, 2, 3 поля
 		for i := 1; i <= 3 && i <= len(fields); i++ {
 			ts, err = parseTimestamp(strings.Join(fields[:i], " "))
 			if err == nil {
@@ -653,14 +449,12 @@ func buildLogStatistics(logLines []string) string {
 // normalizeLogLine удаляет таймштамп и заменяет числа, UUID, IP на плейсхолдеры
 func normalizeLogLine(line string) string {
 	fields := strings.Fields(line)
-	// Удаляем таймштамп (до 3-х первых полей, если это таймштамп)
 	for i := 1; i <= 3 && i < len(fields); i++ {
 		if _, err := parseTimestamp(strings.Join(fields[:i], " ")); err == nil {
 			line = strings.Join(fields[i:], " ")
 			break
 		}
 	}
-	// Заменяем числа, UUID, IP на плейсхолдеры
 	reNum := regexp.MustCompile(`\b\d+\b`)
 	reUUID := regexp.MustCompile(`\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b`)
 	reIP := regexp.MustCompile(`\b\d{1,3}(?:\.\d{1,3}){3}\b`)
@@ -688,7 +482,6 @@ func buildLogAnalysis(logLines []string) string {
 			patterns[norm] = &patternStat{Pattern: norm, Count: 1, Example: line}
 		}
 	}
-	// Собираем и сортируем по убыванию
 	var stats []patternStat
 	for _, v := range patterns {
 		stats = append(stats, *v)
@@ -705,7 +498,6 @@ func buildLogAnalysis(logLines []string) string {
 		sb.WriteString(fmt.Sprintf("%d. [%d раз]\n   Паттерн: %s\n   Пример: %s\n", i+1, stats[i].Count, stats[i].Pattern, stats[i].Example))
 	}
 
-	// --- Редкие паттерны ---
 	var rareStats []patternStat
 	for _, s := range stats {
 		if s.Count <= 2 {
@@ -727,7 +519,6 @@ func buildLogAnalysis(logLines []string) string {
 		sb.WriteString("\nНет уникальных или редких паттернов.\n")
 	}
 
-	// --- Длинные сообщения ---
 	type longLine struct {
 		Len  int
 		Line string
@@ -749,7 +540,6 @@ func buildLogAnalysis(logLines []string) string {
 		}
 	}
 
-	// --- Новый блок: подозрительные сообщения ---
 	type suspiciousPattern struct {
 		Label string
 		Regex *regexp.Regexp
@@ -767,7 +557,6 @@ func buildLogAnalysis(logLines []string) string {
 		{"fatal", regexp.MustCompile(`(?i)\bfatal\b`)},
 		{"segfault", regexp.MustCompile(`(?i)\bsegfault\b`)},
 		{"stacktrace", regexp.MustCompile(`(?i)\bstack\s?trace\b`)},
-		// Контекстные фразы:
 		{"not found", regexp.MustCompile(`(?i)not found`)},
 		{"could not", regexp.MustCompile(`(?i)could not`)},
 		{"no such file", regexp.MustCompile(`(?i)no such file`)},
@@ -799,7 +588,6 @@ func buildLogAnalysis(logLines []string) string {
 		sb.WriteString("  Не найдено подозрительных сообщений.\n")
 	}
 
-	// --- N-грамм анализ ---
 	type ngramStat struct {
 		Phrase string
 		Count  int
@@ -808,13 +596,11 @@ func buildLogAnalysis(logLines []string) string {
 	for _, line := range logLines {
 		norm := normalizeLogLine(line)
 		words := strings.Fields(norm)
-		// Четырёхграммы
 		for i := 0; i < len(words)-3; i++ {
 			fourgram := words[i] + " " + words[i+1] + " " + words[i+2] + " " + words[i+3]
 			fourgramFreq[fourgram]++
 		}
 	}
-	// Топ-10 четырёхграмм
 	var fourgramStats []ngramStat
 	for k, v := range fourgramFreq {
 		fourgramStats = append(fourgramStats, ngramStat{k, v})
