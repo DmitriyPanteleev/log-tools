@@ -32,6 +32,9 @@ type Model struct {
 	gotoMode   bool   // режим перехода по таймштампу
 
 	mainTimestampFormat string // основной формат таймштампа, определённый из первой строки
+
+	analysisResults    map[string]string // результаты этапов анализа
+	analysisInProgress bool              // идет ли сейчас анализ
 }
 
 func initialModel() Model {
@@ -174,6 +177,10 @@ type logFileLoadedMsg struct {
 	maxTime             time.Time
 	mainTimestampFormat string
 }
+type analysisStepMsg struct {
+	StepName string
+	Content  string
+}
 
 // Реализация tea.Model — Init
 func (m Model) Init() tea.Cmd {
@@ -288,7 +295,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textInput.Reset()
 				return m, nil
 			case "analyse":
-				m.viewport.SetContent(buildLogAnalysis(m.logLines))
+				m.analysisResults = map[string]string{
+					"patterns":   "Вычисление...",
+					"rare":       "Вычисление...",
+					"long":       "Вычисление...",
+					"suspicious": "Вычисление...",
+					"ngrams":     "Вычисление...",
+				}
+				m.analysisInProgress = true
+				m.viewport.SetContent(joinAnalysisResults(m.analysisResults))
+				return m, analyseLogAsync(m.logLines)
 			case "quit", "exit":
 				return m, tea.Quit
 			case "help":
@@ -344,6 +360,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case errorMsg:
 		m.err = msg.err
+
+	case analysisStepMsg:
+		if m.analysisResults == nil {
+			m.analysisResults = make(map[string]string)
+		}
+		m.analysisResults[msg.StepName] = msg.Content
+		m.viewport.SetContent(joinAnalysisResults(m.analysisResults))
+
+		// Проверка завершения всех этапов
+		allDone := true
+		for _, v := range m.analysisResults {
+			if strings.HasPrefix(v, "Вычисление") {
+				allDone = false
+				break
+			}
+		}
+		if allDone {
+			m.analysisInProgress = false
+		}
+		return m, nil
 	}
 
 	var cmd tea.Cmd
@@ -466,8 +502,10 @@ func normalizeLogLine(line string) string {
 	return line
 }
 
-// buildLogAnalysis формирует сводку по самым частым паттернам сообщений
-func buildLogAnalysis(logLines []string) string {
+// --- РЕАЛИЗУЙТЕ ЭТАПЫ АНАЛИЗА КАК ОТДЕЛЬНЫЕ ФУНКЦИИ ---
+// Можно вынести из buildLogAnalysis соответствующие куски кода:
+
+func analysePatterns(logLines []string) string {
 	type patternStat struct {
 		Pattern string
 		Count   int
@@ -487,38 +525,52 @@ func buildLogAnalysis(logLines []string) string {
 		stats = append(stats, *v)
 	}
 	sort.Slice(stats, func(i, j int) bool { return stats[i].Count > stats[j].Count })
-
 	topN := 7
 	if len(stats) < topN {
 		topN = len(stats)
 	}
 	var sb strings.Builder
-	sb.WriteString("Анализ лог-файла: самые частые паттерны сообщений\n")
 	for i := 0; i < topN; i++ {
 		sb.WriteString(fmt.Sprintf("%d. [%d раз]\n   Паттерн: %s\n   Пример: %s\n", i+1, stats[i].Count, stats[i].Pattern, stats[i].Example))
 	}
+	return sb.String()
+}
 
-	var rareStats []patternStat
-	for _, s := range stats {
-		if s.Count <= 2 {
-			rareStats = append(rareStats, s)
+func analyseRarePatterns(logLines []string) string {
+	type patternStat struct {
+		Pattern string
+		Count   int
+		Example string
+	}
+	patterns := make(map[string]*patternStat)
+	for _, line := range logLines {
+		norm := normalizeLogLine(line)
+		if stat, ok := patterns[norm]; ok {
+			stat.Count++
+		} else {
+			patterns[norm] = &patternStat{Pattern: norm, Count: 1, Example: line}
 		}
 	}
-	sort.Slice(rareStats, func(i, j int) bool { return rareStats[i].Count < rareStats[j].Count })
-
+	var stats []patternStat
+	for _, v := range patterns {
+		stats = append(stats, *v)
+	}
+	sort.Slice(stats, func(i, j int) bool { return stats[i].Count < stats[j].Count })
 	rareN := 5
-	if len(rareStats) < rareN {
-		rareN = len(rareStats)
+	if len(stats) < rareN {
+		rareN = len(stats)
 	}
-	if rareN > 0 {
-		sb.WriteString("\nРедкие (уникальные или почти уникальные) паттерны:\n")
-		for i := 0; i < rareN; i++ {
-			sb.WriteString(fmt.Sprintf("%d. [%d раз]\n   Паттерн: %s\n   Пример: %s\n", i+1, rareStats[i].Count, rareStats[i].Pattern, rareStats[i].Example))
-		}
-	} else {
-		sb.WriteString("\nНет уникальных или редких паттернов.\n")
+	var sb strings.Builder
+	for i := 0; i < rareN; i++ {
+		sb.WriteString(fmt.Sprintf("%d. [%d раз]\n   Паттерн: %s\n   Пример: %s\n", i+1, stats[i].Count, stats[i].Pattern, stats[i].Example))
 	}
+	if rareN == 0 {
+		sb.WriteString("Нет уникальных или редких паттернов.\n")
+	}
+	return sb.String()
+}
 
+func analyseLongLines(logLines []string) string {
 	type longLine struct {
 		Len  int
 		Line string
@@ -528,18 +580,18 @@ func buildLogAnalysis(logLines []string) string {
 		longLines = append(longLines, longLine{Len: len(line), Line: line})
 	}
 	sort.Slice(longLines, func(i, j int) bool { return longLines[i].Len > longLines[j].Len })
-
 	longN := 5
 	if len(longLines) < longN {
 		longN = len(longLines)
 	}
-	if longN > 0 {
-		sb.WriteString("\nСамые длинные сообщения:\n")
-		for i := 0; i < longN; i++ {
-			sb.WriteString(fmt.Sprintf("%d. [%d символов]\n   %s\n", i+1, longLines[i].Len, longLines[i].Line))
-		}
+	var sb strings.Builder
+	for i := 0; i < longN; i++ {
+		sb.WriteString(fmt.Sprintf("%d. [%d символов]\n   %s\n", i+1, longLines[i].Len, longLines[i].Line))
 	}
+	return sb.String()
+}
 
+func analyseSuspicious(logLines []string) string {
 	type suspiciousPattern struct {
 		Label string
 		Regex *regexp.Regexp
@@ -566,8 +618,7 @@ func buildLogAnalysis(logLines []string) string {
 		{"disk full", regexp.MustCompile(`(?i)disk full`)},
 		{"broken pipe", regexp.MustCompile(`(?i)broken pipe`)},
 	}
-
-	sb.WriteString("\nПодозрительные сообщения по ключевым словам и шаблонам:\n")
+	var sb strings.Builder
 	foundAny := false
 	for _, pat := range suspiciousPatterns {
 		var matches []string
@@ -587,7 +638,10 @@ func buildLogAnalysis(logLines []string) string {
 	if !foundAny {
 		sb.WriteString("  Не найдено подозрительных сообщений.\n")
 	}
+	return sb.String()
+}
 
+func analyseNgrams(logLines []string) string {
 	type ngramStat struct {
 		Phrase string
 		Count  int
@@ -609,12 +663,52 @@ func buildLogAnalysis(logLines []string) string {
 	if len(fourgramStats) > 10 {
 		fourgramStats = fourgramStats[:10]
 	}
-
-	sb.WriteString("\nТоп-10 четырёхграмм (четырёхсловных фраз):\n")
+	var sb strings.Builder
 	for i, stat := range fourgramStats {
 		sb.WriteString(fmt.Sprintf("%d. [%d] %s\n", i+1, stat.Count, stat.Phrase))
 	}
+	return sb.String()
+}
 
+// Функция для запуска анализа логов асинхронно
+func analyseLogAsync(logLines []string) tea.Cmd {
+	return tea.Batch(
+		func() tea.Msg {
+			return analysisStepMsg{StepName: "patterns", Content: analysePatterns(logLines)}
+		},
+		func() tea.Msg {
+			return analysisStepMsg{StepName: "rare", Content: analyseRarePatterns(logLines)}
+		},
+		func() tea.Msg {
+			return analysisStepMsg{StepName: "long", Content: analyseLongLines(logLines)}
+		},
+		func() tea.Msg {
+			return analysisStepMsg{StepName: "suspicious", Content: analyseSuspicious(logLines)}
+		},
+		func() tea.Msg {
+			return analysisStepMsg{StepName: "ngrams", Content: analyseNgrams(logLines)}
+		},
+	)
+}
+
+// Функция для сборки вывода результатов анализа
+func joinAnalysisResults(results map[string]string) string {
+	order := []string{"patterns", "rare", "long", "suspicious", "ngrams"}
+	titles := map[string]string{
+		"patterns":   "Анализ лог-файла: самые частые паттерны сообщений",
+		"rare":       "Редкие (уникальные или почти уникальные) паттерны",
+		"long":       "Самые длинные сообщения",
+		"suspicious": "Подозрительные сообщения по ключевым словам и шаблонам",
+		"ngrams":     "Топ-10 четырёхграмм (четырёхсловных фраз)",
+	}
+	var sb strings.Builder
+	for _, k := range order {
+		if v, ok := results[k]; ok {
+			sb.WriteString("\n" + titles[k] + ":\n")
+			sb.WriteString(v)
+			sb.WriteString("\n")
+		}
+	}
 	return sb.String()
 }
 
