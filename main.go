@@ -602,6 +602,7 @@ func analyseSuspicious(logLines []string) string {
 		{"fail", regexp.MustCompile(`(?i)\bfail(ed|ing|s)?\b`)},
 		{"exception", regexp.MustCompile(`(?i)\bexception(s)?\b`)},
 		{"panic", regexp.MustCompile(`(?i)\bpanic(s|ed|ing)?\b`)},
+		{"error", regexp.MustCompile(`(?i)\berror(s)?\b`)},
 		{"critical", regexp.MustCompile(`(?i)\bcritical\b`)},
 		{"abort", regexp.MustCompile(`(?i)\babort(ed|ing|s)?\b`)},
 		{"timeout", regexp.MustCompile(`(?i)\btime\s?out(s|ed|ing)?\b`)},
