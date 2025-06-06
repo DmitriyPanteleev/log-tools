@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Model — структура состояния приложения
@@ -215,7 +216,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					var filtered []string
 					for _, line := range m.logLines {
 						if re.MatchString(line) {
-							filtered = append(filtered, line)
+							// Выделяем совпадения
+							filtered = append(filtered, highlightMatches(line, re))
 						}
 					}
 					m.viewport.SetContent(strings.Join(filtered, "\n"))
@@ -710,6 +712,23 @@ func joinAnalysisResults(results map[string]string) string {
 		}
 	}
 	return sb.String()
+}
+
+func highlightMatches(line string, re *regexp.Regexp) string {
+	highlightStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
+	matches := re.FindAllStringIndex(line, -1)
+	if len(matches) == 0 {
+		return line
+	}
+	var result strings.Builder
+	last := 0
+	for _, m := range matches {
+		result.WriteString(line[last:m[0]])
+		result.WriteString(highlightStyle.Render(line[m[0]:m[1]]))
+		last = m[1]
+	}
+	result.WriteString(line[last:])
+	return result.String()
 }
 
 func main() {
