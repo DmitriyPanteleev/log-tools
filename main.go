@@ -15,6 +15,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+var (
+	Version   = "dev"
+	GitCommit = "none"
+)
+
 // Model — структура состояния приложения
 type Model struct {
 	histogram map[string]int  // Частота логов по времени
@@ -307,17 +312,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.analysisInProgress = true
 				m.viewport.SetContent(joinAnalysisResults(m.analysisResults))
 				return m, analyseLogAsync(m.logLines)
+			case "version":
+				m.viewport.SetContent(fmt.Sprintf("Версия: %s\nКоммит: %s", Version, GitCommit))
 			case "quit", "exit":
 				return m, tea.Quit
 			case "help":
-				m.viewport.SetContent("Доступные команды:\n" +
-					"list - Показать все записи логов\n" +
-					"goto - Перейти к указаному таймштампу\n" +
-					"filter - Отобразить строки, соответствующие регулярному выражению\n" +
-					"stat - Сформировать статистику по лог файлу\n" +
-					"analyse   - Расширенный анализ лог файла\n" +
-					"quit - Выйти из приложения\n" +
-					"help - Показать эту справку")
+				m.viewport.SetContent(
+					"Доступные команды:\n" +
+						"list - Показать все записи логов\n" +
+						"goto - Перейти к указаному таймштампу\n" +
+						"filter - Отобразить строки, соответствующие регулярному выражению\n" +
+						"stat - Сформировать статистику по лог файлу\n" +
+						"analyse - Расширенный анализ лог файла\n" +
+						"version - Показать версию приложения\n" +
+						"quit - Выйти из приложения\n" +
+						"help - Показать эту справку",
+				)
 			default:
 				m.viewport.SetContent(fmt.Sprintf("Неизвестная команда: %s\nВведите 'help' для списка команд", cmd))
 			}
@@ -349,6 +359,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.viewport.SetContent(fmt.Sprintf(
 			"Файл логов загружен: %s\n%d записей найдено.\n"+
+				"Версия: %s\nКоммит: %s\n"+
 				"Введите 'list' для просмотра логов.\n\n"+
 				"Доступные команды:\n"+
 				"list - Показать все записи логов\n"+
@@ -356,9 +367,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				"filter - Отобразить строки, соответствующие регулярному выражению\n"+
 				"stat - Сформировать статистику по лог файлу\n"+
 				"analyse   - Расширенный анализ лог файла\n"+
+				"version - Показать версию приложения\n"+
 				"quit - Выйти из приложения\n"+
 				"help - Показать эту справку",
-			m.logFile, len(m.logLines)))
+			m.logFile, len(m.logLines), Version, GitCommit))
 
 	case errorMsg:
 		m.err = msg.err
