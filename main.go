@@ -516,9 +516,6 @@ func normalizeLogLine(line string) string {
 	return line
 }
 
-// --- РЕАЛИЗУЙТЕ ЭТАПЫ АНАЛИЗА КАК ОТДЕЛЬНЫЕ ФУНКЦИИ ---
-// Можно вынести из buildLogAnalysis соответствующие куски кода:
-
 func analysePatterns(logLines []string) string {
 	type patternStat struct {
 		Pattern string
