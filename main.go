@@ -38,6 +38,7 @@ type Model struct {
 	gotoMode   bool   // режим перехода по таймштампу
 
 	mainTimestampFormat string // основной формат таймштампа, определённый из первой строки
+	horizOffset         int    // Горизонтальное смещение для прокрутки длинных строк
 
 	analysisResults    map[string]string // результаты этапов анализа
 	analysisInProgress bool              // идет ли сейчас анализ
@@ -202,6 +203,29 @@ func (m Model) Init() tea.Cmd {
 	}
 }
 
+func (m *Model) updateViewportContent() {
+	// Только если сейчас отображается список логов (list)
+	// Можно добавить флаг, что сейчас активен режим просмотра логов
+	lines := m.logLines
+	offset := m.horizOffset
+	width := m.viewport.Width
+
+	var visible []string
+	for _, line := range lines {
+		// Обрезаем строку по смещению и ширине viewport
+		if offset < len(line) {
+			end := offset + width
+			if end > len(line) {
+				end = len(line)
+			}
+			visible = append(visible, line[offset:end])
+		} else {
+			visible = append(visible, "")
+		}
+	}
+	m.viewport.SetContent(strings.Join(visible, "\n"))
+}
+
 // Реализация tea.Model — Update
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -211,6 +235,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyEsc:
 			return m, tea.Quit
+		case tea.KeyRight:
+			m.horizOffset += 8 // или 1, или любая удобная величина
+			m.updateViewportContent()
+			return m, nil
+		case tea.KeyLeft:
+			if m.horizOffset > 0 {
+				m.horizOffset -= 8
+				if m.horizOffset < 0 {
+					m.horizOffset = 0
+				}
+				m.updateViewportContent()
+			}
+			return m, nil
 		case tea.KeyEnter:
 			if m.filterMode {
 				re, err := regexp.Compile(m.textInput.Value())
@@ -288,6 +325,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd := m.textInput.Value()
 			switch cmd {
 			case "list":
+				m.horizOffset = 0 // сбрасываем смещение при новом выводе
+				m.updateViewportContent()
 				m.viewport.SetContent(strings.Join(m.logLines, "\n"))
 			case "filter":
 				m.filterMode = true
