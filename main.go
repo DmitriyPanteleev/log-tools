@@ -42,6 +42,8 @@ type Model struct {
 
 	analysisResults    map[string]string // результаты этапов анализа
 	analysisInProgress bool              // идет ли сейчас анализ
+
+	logsVisible bool // разрешено ли просматривать лог-файл
 }
 
 func initialModel() Model {
@@ -54,13 +56,14 @@ func initialModel() Model {
 	vp.SetContent("Log output will appear here...")
 
 	return Model{
-		histogram: make(map[string]int),
-		logLines:  []string{},
-		viewport:  vp,
-		textInput: ti,
-		minTime:   time.Now(),
-		maxTime:   time.Time{},
-		err:       nil,
+		histogram:   make(map[string]int),
+		logLines:    []string{},
+		viewport:    vp,
+		textInput:   ti,
+		minTime:     time.Now(),
+		maxTime:     time.Time{},
+		err:         nil,
+		logsVisible: false,
 	}
 }
 
@@ -205,7 +208,9 @@ func (m Model) Init() tea.Cmd {
 
 func (m *Model) updateViewportContent() {
 	// Только если сейчас отображается список логов (list)
-	// Можно добавить флаг, что сейчас активен режим просмотра логов
+	if !m.logsVisible {
+		return
+	}
 	lines := m.logLines
 	offset := m.horizOffset
 	width := m.viewport.Width
@@ -236,11 +241,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC, tea.KeyEsc:
 			return m, tea.Quit
 		case tea.KeyRight:
-			m.horizOffset += 8 // или 1, или любая удобная величина
-			m.updateViewportContent()
+			if m.logsVisible {
+				m.horizOffset += 8
+				m.updateViewportContent()
+			}
 			return m, nil
 		case tea.KeyLeft:
-			if m.horizOffset > 0 {
+			if m.logsVisible && m.horizOffset > 0 {
 				m.horizOffset -= 8
 				if m.horizOffset < 0 {
 					m.horizOffset = 0
@@ -325,22 +332,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd := m.textInput.Value()
 			switch cmd {
 			case "list":
-				m.horizOffset = 0 // сбрасываем смещение при новом выводе
+				m.horizOffset = 0
+				m.logsVisible = true
 				m.updateViewportContent()
 				m.viewport.SetContent(strings.Join(m.logLines, "\n"))
 			case "filter":
+				m.logsVisible = false
 				m.filterMode = true
 				m.textInput.Placeholder = "Введите регулярное выражение"
 				m.textInput.Reset()
 				return m, nil
 			case "stat":
+				m.logsVisible = false
 				m.viewport.SetContent(buildLogStatistics(m.logLines))
 			case "goto":
+				m.logsVisible = false
 				m.gotoMode = true
 				m.textInput.Placeholder = "Введите таймштамп"
 				m.textInput.Reset()
 				return m, nil
 			case "analyse":
+				m.logsVisible = false
 				m.analysisResults = map[string]string{
 					"patterns":   "Вычисление...",
 					"rare":       "Вычисление...",
@@ -352,10 +364,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.SetContent(joinAnalysisResults(m.analysisResults))
 				return m, analyseLogAsync(m.logLines)
 			case "version":
+				m.logsVisible = false
 				m.viewport.SetContent(fmt.Sprintf("Версия: %s\nКоммит: %s", Version, GitCommit))
 			case "quit", "exit":
 				return m, tea.Quit
 			case "help":
+				m.logsVisible = false
 				m.viewport.SetContent(
 					"Доступные команды:\n" +
 						"list - Показать все записи логов\n" +
@@ -368,6 +382,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						"help - Показать эту справку",
 				)
 			default:
+				m.logsVisible = false
 				m.viewport.SetContent(fmt.Sprintf("Неизвестная команда: %s\nВведите 'help' для списка команд", cmd))
 			}
 			m.textInput.Reset()
@@ -396,6 +411,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.maxTime = msg.maxTime
 		m.mainTimestampFormat = msg.mainTimestampFormat
 
+		m.logsVisible = false
 		m.viewport.SetContent(fmt.Sprintf(
 			"Файл логов загружен: %s\n%d записей найдено.\n"+
 				"Версия: %s\nКоммит: %s\n"+
